@@ -6,9 +6,9 @@
   <title>Setup - qBit Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="alternate icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="stylesheet" href="/static/css/style.css?v=2">
+  <link rel="stylesheet" href="/static/css/style.css?v=3">
 </head>
-<body>
+<body x-data="setupApp">
   <header>
     <h1>q<span>Bit</span> Dashboard</h1>
   </header>
@@ -16,24 +16,26 @@
     <div class="login-box">
       <h2>Initial Setup</h2>
       <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">Create your admin account to get started.</p>
-      <form id="setup-form">
+      <form @submit.prevent="submit">
         <div class="form-group">
           <label for="username">Username</label>
-          <input id="username" type="text" value="admin" autocomplete="username" required>
+          <input id="username" type="text" autocomplete="username" required x-model="username">
         </div>
         <div class="form-group pw-field-wrap">
           <label for="password">Password <span class="pw-tooltip-trigger" tabindex="0">?<span class="pw-tooltip">Password must contain:<br>- At least 8 characters<br>- 1 uppercase letter (A-Z)<br>- 1 lowercase letter (a-z)<br>- 1 number (0-9)<br>- 1 special character</span></span></label>
-          <input id="password" type="password" autocomplete="new-password" required>
+          <input id="password" type="password" autocomplete="new-password" required x-model="password">
         </div>
         <div class="form-group">
           <label for="confirm-password">Confirm Password</label>
-          <input id="confirm-password" type="password" autocomplete="new-password" required>
+          <input id="confirm-password" type="password" autocomplete="new-password" required x-model="confirmPassword">
         </div>
-        <button type="submit" class="btn-primary login-btn">Create Admin Account</button>
+        <button type="submit" class="btn-primary login-btn" :disabled="submitting">Create Admin Account</button>
       </form>
-      <div class="login-error" id="setup-error"></div>
+      <div class="login-error" x-show="hasError" x-text="errorText"></div>
     </div>
   </div>
-  <script data-cfasync="false" src="/static/js/setup.js?v=2"></script>
+  <script defer data-cfasync="false" src="/static/js/shared.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/setup.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/vendor/alpine-csp.min.js?v=3"></script>
 </body>
 </html>

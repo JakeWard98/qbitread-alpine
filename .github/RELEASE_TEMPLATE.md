@@ -21,7 +21,7 @@ v<MAJOR>.<MINOR>.<PATCH>
 ## Docker tags published per release
 
 When you publish a release (e.g. `v1.2.3`), the workflow automatically
-pushes the following tags to `ghcr.io/jakeward98/qbitread`:
+pushes the following tags to `ghcr.io/jakeward98/qbitread-alpine`:
 
 | Docker tag    | Meaning                                    |
 |---------------|--------------------------------------------|
@@ -55,7 +55,7 @@ Pre-releases (any tag containing a hyphen, e.g. `v1.0.0-beta.1`) are
 handled differently from stable releases:
 
 - They do **not** update the `latest` tag (`latest=auto` in the workflow).
-- They receive the rolling `beta` tag, so `ghcr.io/jakeward98/qbitread:beta`
+- They receive the rolling `beta` tag, so `ghcr.io/jakeward98/qbitread-alpine:beta`
   always points to the most recent pre-release.
 - Semver `major.minor` and `major` floating tags are not generated for
   pre-releases.
@@ -67,10 +67,10 @@ the GitHub release form.
 
 ```bash
 # Latest stable release
-docker pull ghcr.io/jakeward98/qbitread:latest
+docker pull ghcr.io/jakeward98/qbitread-alpine:latest
 
 # Specific version
-docker pull ghcr.io/jakeward98/qbitread:0.0.1
+docker pull ghcr.io/jakeward98/qbitread-alpine:0.0.1
 ```
 
 Or update `docker-compose.yml` to use the pre-built image:
@@ -78,6 +78,6 @@ Or update `docker-compose.yml` to use the pre-built image:
 ```yaml
 services:
   qbitread:
-    image: ghcr.io/jakeward98/qbitread:latest
+    image: ghcr.io/jakeward98/qbitread-alpine:latest
     # Remove the 'build: .' line when using a pre-built image
 ```

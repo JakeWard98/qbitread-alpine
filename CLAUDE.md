@@ -19,12 +19,12 @@ itself is mandatory.
 ## Tech Stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn (ASGI)
-- **Frontend**: Vanilla JavaScript, HTML5, CSS3 (no frameworks)
+- **Frontend**: Alpine.js (CSP-friendly build, self-hosted), HTML5, CSS3 — no build step
 - **Database**: SQLite via aiosqlite (raw async queries, no ORM)
 - **HTTP Client**: httpx (async) for qBittorrent API calls
 - **Auth**: JWT (PyJWT) + bcrypt password hashing
-- **Container**: Docker (multi-stage build, non-root user)
-- **CI/CD**: GitHub Actions -> GitHub Container Registry (GHCR)
+- **Container**: Alpine Linux (`python:3.12-alpine`), multi-stage build, non-root user
+- **CI/CD**: GitHub Actions → GitHub Container Registry (GHCR), CodeQL static analysis (Python + JavaScript)
 
 ## Project Structure
 
@@ -44,11 +44,18 @@ app/                    # Backend (FastAPI)
     client.py           # QBitClient with circuit breaker pattern
     router.py           # /api/torrents, /api/transfer endpoints
     schemas.py          # Torrent/transfer Pydantic schemas
-templates/              # HTML pages (index, login, setup, admin)
+templates/              # HTML pages (index, login, setup, admin) using Alpine directives
 static/
-  js/                   # Vanilla JS (app.js, auth.js, setup.js, admin.js)
+  js/                   # Alpine.js components
+    shared.js           # Helpers (fmtBytes, CSRF, password validation) on window.qbr
+    dashboard.js        # dashboardApp — torrent list, polling, filters, sort
+    login.js            # loginApp — login form
+    setup.js            # setupApp — first-run admin creation
+    admin.js            # adminApp — user CRUD, qBit browser-auth, refresh-rate
+    vendor/
+      alpine-csp.min.js # Vendored Alpine.js CSP build (v3.14.9)
   css/style.css         # Dark theme with CSS variables
-Dockerfile              # Multi-stage build
+Dockerfile              # Alpine Linux multi-stage build
 docker-compose.yml      # Production compose
 .env.example            # Environment variable template
 requirements.txt        # Python dependencies (pinned)
@@ -81,10 +88,11 @@ Browser  -->  FastAPI (auth + proxy)  -->  qBittorrent API
 ### Design Principles
 
 - **Read-only**: The app monitors torrents. It does not add, pause, resume, or delete them. Do not add write operations to the qBittorrent API surface.
-- **Vanilla JS frontend**: No React, Vue, or other frameworks. Keep it simple — plain JavaScript with fetch() calls. No build step for frontend assets.
+- **Alpine.js frontend (CSP build only)**: The frontend uses the [`@alpinejs/csp`](https://alpinejs.dev/advanced/csp) build, vendored at `static/js/vendor/alpine-csp.min.js`. This build avoids `new Function()`/`eval()` so the strict `script-src 'self'` CSP stays intact. **Do not** swap in the standard Alpine bundle — it would force `'unsafe-eval'` into the CSP and weaken XSS protection. The CSP build only resolves dot-separated property paths inside directives; complex logic must live in `Alpine.data()` methods/getters and be referenced by name.
+- **No build step**: Alpine.js is vendored as a single minified file. No npm/webpack/rollup pipeline — JS is served as-is, same as before.
 - **Async everywhere**: All backend I/O is async (httpx, aiosqlite). Do not introduce synchronous blocking calls.
 - **Dark minimal UI**: The interface uses CSS variables for theming. The design is intentionally sparse — no unnecessary visual complexity.
-- **Single-page feel**: Each page (dashboard, login, setup, admin) is a separate HTML template served by FastAPI, with JS handling dynamic behavior. Not a true SPA — no client-side routing.
+- **Single-page feel**: Each page (dashboard, login, setup, admin) is a separate HTML template served by FastAPI, with one Alpine component handling its dynamic behavior. Not a true SPA — no client-side routing.
 - **Pydantic for all validation**: Request/response schemas use Pydantic models. Config uses pydantic-settings.
 - **Circuit breaker on qBit client**: The `QBitClient` (`app/qbit/client.py`) uses exponential backoff (10s to 300s) on failed logins and detects IP bans (15-minute pause). Respect this pattern when modifying the client.
 
@@ -131,10 +139,16 @@ Applied via `SecurityHeadersMiddleware` in `app/middleware.py`:
 
 - No CORS headers are set. The app only accepts same-origin requests. Do not add CORS middleware unless explicitly required.
 
+### Frontend CSP Build Constraint
+
+- Always use `@alpinejs/csp` (vendored at `static/js/vendor/alpine-csp.min.js`). Replacing it with the standard build would require `'unsafe-eval'` in `script-src`, which is forbidden — that opens the door to XSS-driven code execution.
+- All Alpine directives (`x-text`, `x-show`, `:class`, `@click`, etc.) must reference a single dot-separated property path on the component data. Computed values, formatted strings, and class lists belong in component methods/getters; the template is dumb on purpose.
+
 ### Docker Security
 
-- Container runs as non-root `appuser` (no login shell).
-- Multi-stage build minimizes attack surface.
+- Base image is `python:3.12-alpine` (musl libc, BusyBox userland) — smaller attack surface than Debian-slim.
+- Container runs as non-root `appuser` (`/sbin/nologin` shell, created via Alpine's `addgroup -S` / `adduser -S`).
+- Multi-stage build keeps `gcc`, `musl-dev`, `python3-dev`, `libffi-dev`, `binutils` in the builder stage only. The runtime image carries only the slimmed venv and the app.
 - SQLite database and secret key persisted in `/app/data/` volume.
 
 ## Code Style & Patterns
@@ -161,8 +175,15 @@ All configuration is via environment variables. See `.env.example` for the full 
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/docker-release.yml`):
-- Triggers on GitHub release publication
-- Multi-platform builds: `linux/amd64`, `linux/arm64`
-- Pushes to GitHub Container Registry (GHCR)
-- Semantic version tags: `1.2.3`, `1.2`, `1`, `latest` (or `beta` for pre-releases)
+Two GitHub Actions workflows live in `.github/workflows/`:
+
+**`docker-release.yml`** — image publication:
+- Triggers on GitHub release publication.
+- Multi-platform builds: `linux/amd64`, `linux/arm64`.
+- Pushes to GitHub Container Registry as `ghcr.io/<owner>/qbitread-alpine` (image name auto-derived from `${GITHUB_REPOSITORY,,}`).
+- Semantic version tags: `1.2.3`, `1.2`, `1`, `latest` (or `beta` for pre-releases).
+
+**`codeql.yml`** — static analysis:
+- Triggers on pushes to `main`, PRs targeting `main`, and a weekly schedule.
+- Scans Python and JavaScript with the `security-extended,security-and-quality` query suites.
+- Results surface in the repo's Security → Code scanning tab.

@@ -6,53 +6,60 @@
   <title>qBit Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="alternate icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="stylesheet" href="/static/css/style.css?v=2">
+  <link rel="stylesheet" href="/static/css/style.css?v=3">
 </head>
-<body>
+<body x-data="dashboardApp">
   <header>
     <h1>q<span>Bit</span> Dashboard</h1>
-    <div class="header-right">
-      <div class="spinner" id="spinner"></div>
-      <span class="dot dot-red" id="conn-dot" title="Connecting..."></span>
-      <a href="/admin" class="btn-ghost" id="btn-admin" style="display:none">Admin</a>
-      <button class="btn-ghost" id="btn-logout">Logout</button>
-      <button class="btn-primary" id="btn-refresh">Refresh</button>
+    <div :class="headerRightClass">
+      <div class="spinner" x-show="isSpinning"></div>
+      <span :class="connectionDotClass" :title="connectionTitle"></span>
+      <a href="/admin" class="btn-ghost" x-show="isAdmin">Admin</a>
+      <button class="btn-ghost" @click="logout">Logout</button>
+      <button class="btn-primary" @click="doRefresh">Refresh</button>
     </div>
   </header>
-  <div id="error-bar"></div>
+  <div id="error-bar">
+    <template x-if="showPasswordWarning">
+      <div class="pw-warn-banner">Your password does not meet current security requirements. Please contact an admin to update it. <button class="btn-ghost" @click="dismissPasswordWarning">Dismiss</button></div>
+    </template>
+    <template x-if="hasError">
+      <div x-text="errorText"></div>
+    </template>
+  </div>
   <div id="stats-bar">
-    <div class="stat"><span class="stat-label">Download</span><span class="stat-value dl" id="s-dl">&mdash;</span></div>
-    <div class="stat"><span class="stat-label">Upload</span><span class="stat-value ul" id="s-ul">&mdash;</span></div>
+    <div class="stat"><span class="stat-label">Download</span><span class="stat-value dl" x-text="transferDl">&mdash;</span></div>
+    <div class="stat"><span class="stat-label">Upload</span><span class="stat-value ul" x-text="transferUl">&mdash;</span></div>
   </div>
   <div id="toolbar">
     <div class="mobile-filter-row">
-      <select id="mobile-filter" class="mobile-filter">
-        <option value="all">All (0)</option>
-        <option value="downloading">Downloading (0)</option>
-        <option value="seeding">Seeding (0)</option>
-        <option value="completed">Completed (0)</option>
-        <option value="running">Running (0)</option>
-        <option value="stopped">Stopped (0)</option>
-        <option value="active">Active (0)</option>
-        <option value="stalled">Stalled (0)</option>
+      <select id="mobile-filter" class="mobile-filter" x-model="filterState">
+        <option value="all" x-text="filterLabels.all">All (0)</option>
+        <option value="downloading" x-text="filterLabels.downloading">Downloading (0)</option>
+        <option value="seeding" x-text="filterLabels.seeding">Seeding (0)</option>
+        <option value="completed" x-text="filterLabels.completed">Completed (0)</option>
+        <option value="running" x-text="filterLabels.running">Running (0)</option>
+        <option value="stopped" x-text="filterLabels.stopped">Stopped (0)</option>
+        <option value="active" x-text="filterLabels.active">Active (0)</option>
+        <option value="stalled" x-text="filterLabels.stalled">Stalled (0)</option>
       </select>
-      <button type="button" id="mobile-filter-dir" class="mobile-filter-dir" aria-label="Toggle sort direction" aria-pressed="true" title="Descending">&#8595;</button>
+      <button type="button" class="mobile-filter-dir" aria-label="Toggle sort direction" @click="toggleSortDir" x-text="sortIndicator">&#8595;</button>
     </div>
     <div id="toolbar-left">
-      <button class="filter-btn active" data-filter="all">All <span class="filter-count" id="fc-all">0</span></button>
-      <button class="filter-btn" data-filter="downloading">Downloading <span class="filter-count" id="fc-downloading">0</span></button>
-      <button class="filter-btn" data-filter="seeding">Seeding <span class="filter-count" id="fc-seeding">0</span></button>
-      <button class="filter-btn" data-filter="completed">Completed <span class="filter-count" id="fc-completed">0</span></button>
-      <button class="filter-btn" data-filter="running">Running <span class="filter-count" id="fc-running">0</span></button>
-      <button class="filter-btn" data-filter="stopped">Stopped <span class="filter-count" id="fc-stopped">0</span></button>
-      <button class="filter-btn" data-filter="active">Active <span class="filter-count" id="fc-active">0</span></button>
-      <button class="filter-btn" data-filter="stalled">Stalled <span class="filter-count" id="fc-stalled">0</span></button>
+      <button data-filter="all" :class="filterAllClass" @click="setFilterBtn">All <span class="filter-count" x-text="counts.all">0</span></button>
+      <button data-filter="downloading" :class="filterDownloadingClass" @click="setFilterBtn">Downloading <span class="filter-count" x-text="counts.downloading">0</span></button>
+      <button data-filter="seeding" :class="filterSeedingClass" @click="setFilterBtn">Seeding <span class="filter-count" x-text="counts.seeding">0</span></button>
+      <button data-filter="completed" :class="filterCompletedClass" @click="setFilterBtn">Completed <span class="filter-count" x-text="counts.completed">0</span></button>
+      <button data-filter="running" :class="filterRunningClass" @click="setFilterBtn">Running <span class="filter-count" x-text="counts.running">0</span></button>
+      <button data-filter="stopped" :class="filterStoppedClass" @click="setFilterBtn">Stopped <span class="filter-count" x-text="counts.stopped">0</span></button>
+      <button data-filter="active" :class="filterActiveClass" @click="setFilterBtn">Active <span class="filter-count" x-text="counts.active">0</span></button>
+      <button data-filter="stalled" :class="filterStalledClass" @click="setFilterBtn">Stalled <span class="filter-count" x-text="counts.stalled">0</span></button>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <span id="refresh-info"></span>
-      <input id="search" type="text" placeholder="Search torrents...">
+      <span x-text="refreshText"></span>
+      <input type="text" placeholder="Search torrents..." x-model="searchQ">
       <div class="mobile-sort-row">
-        <select id="mobile-sort" class="mobile-sort">
+        <select class="mobile-sort" x-model="sortCol" @change="sortByMobile">
           <option value="dlspeed">Sort: DL Speed</option>
           <option value="name">Sort: Name</option>
           <option value="size">Sort: Size</option>
@@ -62,7 +69,7 @@
           <option value="ratio">Sort: Ratio</option>
           <option value="state">Sort: Status</option>
         </select>
-        <button type="button" id="mobile-sort-dir" class="mobile-sort-dir" aria-label="Toggle sort direction" aria-pressed="true" title="Descending">&#8595;</button>
+        <button type="button" class="mobile-sort-dir" aria-label="Toggle sort direction" @click="toggleSortDir" x-text="sortIndicator">&#8595;</button>
       </div>
     </div>
   </div>
@@ -70,20 +77,45 @@
     <table>
       <thead>
         <tr>
-          <th data-col="name">Name <span class="sort-icon">&#8597;</span></th>
-          <th data-col="size">Size <span class="sort-icon">&#8597;</span></th>
-          <th data-col="progress" style="min-width:110px">Progress <span class="sort-icon">&#8597;</span></th>
-          <th data-col="dlspeed">DL Speed <span class="sort-icon">&#8597;</span></th>
-          <th data-col="upspeed">UL Speed <span class="sort-icon">&#8597;</span></th>
-          <th data-col="eta">ETA <span class="sort-icon">&#8597;</span></th>
-          <th data-col="ratio">Ratio <span class="sort-icon">&#8597;</span></th>
-          <th data-col="state">Status <span class="sort-icon">&#8597;</span></th>
+          <th data-col="name" :class="sortNameClass" @click="sortBy">Name <span class="sort-icon" x-text="sortIcons.name">&#8597;</span></th>
+          <th data-col="size" :class="sortSizeClass" @click="sortBy">Size <span class="sort-icon" x-text="sortIcons.size">&#8597;</span></th>
+          <th data-col="progress" :class="sortProgressClass" @click="sortBy" style="min-width:110px">Progress <span class="sort-icon" x-text="sortIcons.progress">&#8597;</span></th>
+          <th data-col="dlspeed" :class="sortDlspeedClass" @click="sortBy">DL Speed <span class="sort-icon" x-text="sortIcons.dlspeed">&#8597;</span></th>
+          <th data-col="upspeed" :class="sortUpspeedClass" @click="sortBy">UL Speed <span class="sort-icon" x-text="sortIcons.upspeed">&#8597;</span></th>
+          <th data-col="eta" :class="sortEtaClass" @click="sortBy">ETA <span class="sort-icon" x-text="sortIcons.eta">&#8597;</span></th>
+          <th data-col="ratio" :class="sortRatioClass" @click="sortBy" x-show="showRatio">Ratio <span class="sort-icon" x-text="sortIcons.ratio">&#8597;</span></th>
+          <th data-col="state" :class="sortStateClass" @click="sortBy">Status <span class="sort-icon" x-text="sortIcons.state">&#8597;</span></th>
         </tr>
       </thead>
-      <tbody id="tbody"></tbody>
+      <tbody>
+        <template x-for="t in sortedTorrents" :key="t.hash">
+          <tr>
+            <td class="name-cell">
+              <div class="torrent-name" :title="t.name" x-text="t.name"></div>
+              <template x-if="t.hasCategory">
+                <div class="torrent-cat" x-text="t.category"></div>
+              </template>
+            </td>
+            <td class="num" x-text="t.sizeText"></td>
+            <td>
+              <div class="progress-wrap">
+                <div class="progress-bar"><div class="progress-fill" :style="t.progressStyle"></div></div>
+                <div class="progress-pct" x-text="t.pctText"></div>
+              </div>
+            </td>
+            <td class="num dl-speed" x-text="t.dlspeedText"></td>
+            <td class="num ul-speed" x-text="t.upspeedText"></td>
+            <td class="num eta" x-text="t.etaText"></td>
+            <td class="num ratio" x-text="t.ratioText" x-show="showRatio"></td>
+            <td><span :class="t.badgeClass" x-text="t.stateLabel"></span></td>
+          </tr>
+        </template>
+      </tbody>
     </table>
-    <div id="empty">No torrents match your filter.</div>
+    <div id="empty" x-show="isEmpty">No torrents match your filter.</div>
   </div>
-  <script data-cfasync="false" src="/static/js/app.js?v=2"></script>
+  <script defer data-cfasync="false" src="/static/js/shared.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/dashboard.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/vendor/alpine-csp.min.js?v=3"></script>
 </body>
 </html>

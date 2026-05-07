@@ -1,509 +1,456 @@
+/* qBitRead admin component (Alpine.js CSP build).
+ *
+ * The CSP evaluator only resolves dot-separated property paths, so
+ * everything the template binds to has to be a property/method on the
+ * component or on the iteration variable. Per-row inline edit forms
+ * are rendered by flattening users + active-edit-form into one row
+ * list (`userRows`) and toggling cells with x-show.
+ */
 (function () {
-  const $ = (id) => document.getElementById(id);
+  'use strict';
 
-  function getCsrfToken() {
-    const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-    return m ? m[1] : '';
+  function roleBadgeClass(role) {
+    if (role === 'admin') return 'badge badge-admin';
+    if (role === 'monitor') return 'badge badge-monitor';
+    return 'badge badge-user';
   }
 
-  function validatePassword(pw) {
-    const errors = [];
-    if (pw.length < 8) errors.push('at least 8 characters');
-    if (!/[A-Z]/.test(pw)) errors.push('1 uppercase letter');
-    if (!/[a-z]/.test(pw)) errors.push('1 lowercase letter');
-    if (!/\d/.test(pw)) errors.push('1 number');
-    if (!/[^a-zA-Z0-9]/.test(pw)) errors.push('1 special character');
-    return { valid: errors.length === 0, errors };
+  function roleLabel(role) {
+    if (role === 'admin') return 'Admin';
+    if (role === 'monitor') return 'Monitor';
+    return 'User';
   }
 
-  function escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('adminApp', () => ({
+      /* ── State ── */
+      users: [],
+      adminError: '',
 
-  function validateHttpUrl(raw) {
-    try {
-      const u = new URL(raw);
-      if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
-    } catch { /* invalid URL */ }
-    return null;
-  }
+      // Create-user form
+      newUsername: '',
+      newPassword: '',
+      newRole: 'user',
 
-  function init() {
-    const errorEl = $('admin-error');
-    const tbody = $('users-tbody');
-    if (!errorEl || !tbody) return;
+      // Inline edit state
+      pwEditId: null,
+      pwInput: '',
+      pwMsg: '',
+      pwMsgIsError: true,
 
-    async function checkAdmin() {
-      try {
-        const resp = await fetch('/api/auth/me');
-        if (!resp.ok) { window.location.href = '/login'; return; }
-        const user = await resp.json();
-        if (!user.is_admin) { window.location.href = '/'; return; }
-      } catch {
-        window.location.href = '/login';
-      }
-    }
+      roleEditId: null,
+      roleInput: 'user',
+      roleMsg: '',
+      roleMsgIsError: true,
 
-    async function loadUsers() {
-      errorEl.textContent = '';
-      try {
-        const resp = await fetch('/api/auth/users');
-        if (resp.status === 401) { window.location.href = '/login'; return; }
-        if (resp.status === 403) { window.location.href = '/'; return; }
-        const users = await resp.json();
-        renderUsers(users);
-      } catch {
-        errorEl.textContent = 'Failed to load users.';
-      }
-    }
+      // Refresh rate
+      refreshRate: 5,
+      refreshMsg: '',
+      refreshMsgIsError: false,
 
-    function roleBadgeClass(role) {
-      if (role === 'admin') return 'badge-admin';
-      if (role === 'monitor') return 'badge-monitor';
-      return 'badge-user';
-    }
+      // qBit connection
+      qbitDotClass: 'dot',
+      qbitStatusText: 'Checking...',
+      qbitStatusColor: '',
+      qbitStatusMsg: '',
+      browserAuthEnabled: false,
+      browserHost: '',
+      qbitUsername: '',
 
-    function roleLabel(role) {
-      if (role === 'admin') return 'Admin';
-      if (role === 'monitor') return 'Monitor';
-      return 'User';
-    }
+      // Browser auth form
+      qbitUrl: '',
+      qbitUser: '',
+      qbitPass: '',
+      browserAuthMsg: '',
+      browserAuthMsgColor: '',
 
-    function renderUsers(users) {
-      tbody.innerHTML = users
-        .map((u) => {
-          const created = new Date(u.created_at).toLocaleDateString();
-          const pwStatus = u.password_meets_policy
-            ? '<span class="badge badge-pw-ok">OK</span>'
-            : '<span class="badge badge-pw-weak" title="Password does not meet current security requirements">Weak</span>';
-          return (
-            '<tr>' +
-            '<td class="td-user">' + escHtml(u.username) + '</td>' +
-            '<td class="td-role"><span class="badge ' + roleBadgeClass(u.role) + '">' + roleLabel(u.role) + '</span>' +
-            ' <button class="btn-ghost btn-chrl" data-id="' + u.id + '" data-role="' + escHtml(u.role) + '">Change Role</button></td>' +
-            '<td class="td-created" style="color:var(--muted)">' + created + '</td>' +
-            '<td class="td-pw">' + pwStatus + ' <button class="btn-ghost btn-chpw" data-id="' + u.id + '" data-name="' + escHtml(u.username) + '">Change</button></td>' +
-            '<td class="td-actions"><button class="btn-danger btn-del" data-id="' + u.id + '">Delete</button></td>' +
-            '</tr>'
-          );
-        })
-        .join('');
+      retryDisabled: false,
+      retryLabel: 'Retry Login',
 
-      tbody.querySelectorAll('.btn-del').forEach((btn) => {
-        btn.addEventListener('click', () => deleteUser(parseInt(btn.dataset.id)));
-      });
+      /* ── Init ── */
+      async init() {
+        await this.checkAdmin();
+        this.loadUsers();
+        this.loadConnectionInfo();
+        this.loadRefreshRate();
+      },
 
-      tbody.querySelectorAll('.btn-chpw').forEach((btn) => {
-        btn.addEventListener('click', () => showChangePassword(parseInt(btn.dataset.id), btn.dataset.name));
-      });
+      async checkAdmin() {
+        try {
+          const resp = await fetch('/api/auth/me');
+          if (!resp.ok) { window.location.href = '/login'; return; }
+          const user = await resp.json();
+          if (!user.is_admin) { window.location.href = '/'; return; }
+        } catch (_) {
+          window.location.href = '/login';
+        }
+      },
 
-      tbody.querySelectorAll('.btn-chrl').forEach((btn) => {
-        btn.addEventListener('click', () => showChangeRole(parseInt(btn.dataset.id), btn.dataset.role));
-      });
-    }
+      /* ── Users ── */
+      async loadUsers() {
+        this.adminError = '';
+        try {
+          const resp = await fetch('/api/auth/users');
+          if (resp.status === 401) { window.location.href = '/login'; return; }
+          if (resp.status === 403) { window.location.href = '/'; return; }
+          const users = await resp.json();
+          this.users = users.map((u) => ({
+            id: u.id,
+            username: u.username,
+            role: u.role,
+            roleBadgeClass: roleBadgeClass(u.role),
+            roleLabel: roleLabel(u.role),
+            pwOk: !!u.password_meets_policy,
+            pwBadgeClass: 'badge ' + (u.password_meets_policy ? 'badge-pw-ok' : 'badge-pw-weak'),
+            pwBadgeText: u.password_meets_policy ? 'OK' : 'Weak',
+            pwBadgeTitle: u.password_meets_policy ? '' : 'Password does not meet current security requirements',
+            createdText: u.created_at ? new Date(u.created_at).toLocaleDateString() : '',
+          }));
+        } catch (_) {
+          this.adminError = 'Failed to load users.';
+        }
+      },
 
-    async function deleteUser(id) {
-      if (!confirm('Delete this user?')) return;
-      errorEl.textContent = '';
-      try {
-        const resp = await fetch('/api/auth/users/' + id, {
-          method: 'DELETE',
-          headers: { 'X-CSRF-Token': getCsrfToken() },
-        });
-        if (!resp.ok) {
-          const data = await resp.json();
-          errorEl.textContent = data.detail || 'Failed to delete user.';
+      get userRows() {
+        const rows = [];
+        for (const u of this.users) {
+          rows.push({ key: 'u-' + u.id, kind: 'user', isUserRow: true, isPwEdit: false, isRoleEdit: false, user: u });
+          if (this.pwEditId === u.id) {
+            rows.push({ key: 'pw-' + u.id, kind: 'pw', isUserRow: false, isPwEdit: true, isRoleEdit: false, user: u });
+          }
+          if (this.roleEditId === u.id) {
+            rows.push({ key: 'role-' + u.id, kind: 'role', isUserRow: false, isPwEdit: false, isRoleEdit: true, user: u });
+          }
+        }
+        return rows;
+      },
+
+      get pwMsgStyle() {
+        return 'color:' + (this.pwMsgIsError ? 'var(--red)' : 'var(--green)');
+      },
+      get roleMsgStyle() {
+        return 'color:' + (this.roleMsgIsError ? 'var(--red)' : 'var(--green)');
+      },
+      get refreshMsgStyle() {
+        return 'color:' + (this.refreshMsgIsError ? 'var(--red)' : 'var(--green)');
+      },
+      get browserAuthBlockStyle() {
+        return this.browserAuthEnabled
+          ? 'display:flex;flex-direction:column;gap:14px'
+          : 'display:none';
+      },
+
+      async deleteUser(event) {
+        const id = parseInt(event.currentTarget.dataset.id, 10);
+        if (!id) return;
+        if (!confirm('Delete this user?')) return;
+        this.adminError = '';
+        try {
+          const resp = await fetch('/api/auth/users/' + id, {
+            method: 'DELETE',
+            headers: qbr.csrfHeaders(),
+          });
+          if (!resp.ok) {
+            let detail = 'Failed to delete user.';
+            try { const data = await resp.json(); if (data.detail) detail = data.detail; } catch (_) { /* ignore */ }
+            this.adminError = detail;
+            return;
+          }
+          this.loadUsers();
+        } catch (_) {
+          this.adminError = 'Network error.';
+        }
+      },
+
+      /* ── Inline password edit ── */
+      startEditPassword(event) {
+        const id = parseInt(event.currentTarget.dataset.id, 10);
+        if (!id) return;
+        if (this.pwEditId === id) {
+          this.cancelEdit();
           return;
         }
-        loadUsers();
-      } catch {
-        errorEl.textContent = 'Network error.';
-      }
-    }
+        this.pwEditId = id;
+        this.pwInput = '';
+        this.pwMsg = '';
+        this.pwMsgIsError = true;
+        this.roleEditId = null;
+      },
 
-    /* ── Change Password ── */
-    function showChangePassword(userId, username) {
-      // Remove any existing change-password form
-      const existing = document.getElementById('chpw-form-' + userId);
-      if (existing) { existing.remove(); return; }
-
-      document.querySelectorAll('.chpw-inline').forEach((el) => el.remove());
-
-      const row = document.createElement('tr');
-      row.className = 'chpw-inline';
-      row.id = 'chpw-form-' + userId;
-      row.innerHTML =
-        '<td colspan="5" style="padding:10px 8px">' +
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-        '<span style="font-size:12px;color:var(--muted)">New password for <strong style="color:var(--text)">' + escHtml(username) + '</strong>:</span>' +
-        '<input type="password" class="chpw-input" placeholder="min 8 chars" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 8px;font-size:12px;width:180px;outline:none">' +
-        '<button class="btn-primary chpw-save" style="font-size:11px;padding:6px 12px">Save</button>' +
-        '<button class="btn-ghost chpw-cancel" style="font-size:11px;padding:6px 10px">Cancel</button>' +
-        '<span class="chpw-msg" style="font-size:12px;min-height:16px"></span>' +
-        '</div>' +
-        '</td>';
-
-      // Insert after the user's row
-      const userRow = tbody.querySelector('.btn-chpw[data-id="' + userId + '"]').closest('tr');
-      userRow.after(row);
-
-      const input = row.querySelector('.chpw-input');
-      const msg = row.querySelector('.chpw-msg');
-      input.focus();
-
-      row.querySelector('.chpw-cancel').addEventListener('click', () => row.remove());
-
-      row.querySelector('.chpw-save').addEventListener('click', async () => {
-        msg.textContent = '';
-        msg.style.color = 'var(--red)';
-        const pw = input.value;
-
-        if (!pw) { msg.textContent = 'Password is required.'; return; }
-
-        const check = validatePassword(pw);
+      async savePassword() {
+        this.pwMsg = '';
+        this.pwMsgIsError = true;
+        const userId = this.pwEditId;
+        const pw = this.pwInput || '';
+        if (!userId) return;
+        if (!pw) { this.pwMsg = 'Password is required.'; return; }
+        const check = qbr.validatePassword(pw);
         if (!check.valid) {
-          msg.textContent = 'Missing: ' + check.errors.join(', ');
+          this.pwMsg = 'Missing: ' + check.errors.join(', ');
           return;
         }
-
         try {
           const resp = await fetch('/api/auth/users/' + userId + '/password', {
             method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
+            headers: qbr.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ password: pw }),
           });
-
           if (!resp.ok) {
-            const data = await resp.json();
-            msg.textContent = data.detail || 'Failed to change password.';
+            let detail = 'Failed to change password.';
+            try { const data = await resp.json(); if (data.detail) detail = data.detail; } catch (_) { /* ignore */ }
+            this.pwMsg = detail;
             return;
           }
-
-          msg.style.color = 'var(--green)';
-          msg.textContent = 'Password updated.';
-          setTimeout(() => { row.remove(); loadUsers(); }, 1000);
-        } catch {
-          msg.textContent = 'Network error.';
+          this.pwMsgIsError = false;
+          this.pwMsg = 'Password updated.';
+          setTimeout(() => {
+            this.pwEditId = null;
+            this.pwInput = '';
+            this.pwMsg = '';
+            this.loadUsers();
+          }, 1000);
+        } catch (_) {
+          this.pwMsg = 'Network error.';
         }
-      });
-    }
+      },
 
-    /* ── Change Role ── */
-    function showChangeRole(userId, currentRole) {
-      const existing = document.getElementById('chrl-form-' + userId);
-      if (existing) { existing.remove(); return; }
+      /* ── Inline role edit ── */
+      startEditRole(event) {
+        const id = parseInt(event.currentTarget.dataset.id, 10);
+        const role = event.currentTarget.dataset.role || 'user';
+        if (!id) return;
+        if (this.roleEditId === id) {
+          this.cancelEdit();
+          return;
+        }
+        this.roleEditId = id;
+        this.roleInput = role;
+        this.roleMsg = '';
+        this.roleMsgIsError = true;
+        this.pwEditId = null;
+      },
 
-      document.querySelectorAll('.chrl-inline').forEach((el) => el.remove());
-
-      const row = document.createElement('tr');
-      row.className = 'chrl-inline';
-      row.id = 'chrl-form-' + userId;
-      row.innerHTML =
-        '<td colspan="5" style="padding:10px 8px">' +
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">' +
-        '<span style="font-size:12px;color:var(--muted);white-space:nowrap">New role:</span>' +
-        '<select class="chrl-select" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 8px;font-size:12px;outline:none;min-width:100px">' +
-        '<option value="user"' + (currentRole === 'user' ? ' selected' : '') + '>User</option>' +
-        '<option value="monitor"' + (currentRole === 'monitor' ? ' selected' : '') + '>Monitor</option>' +
-        '<option value="admin"' + (currentRole === 'admin' ? ' selected' : '') + '>Admin</option>' +
-        '</select>' +
-        '<button class="btn-primary chrl-save" style="font-size:11px;padding:6px 12px">Save</button>' +
-        '<button class="btn-ghost chrl-cancel" style="font-size:11px;padding:6px 10px">Cancel</button>' +
-        '<span class="chrl-msg" style="font-size:12px;min-height:16px"></span>' +
-        '</div>' +
-        '</td>';
-
-      const userRow = tbody.querySelector('.btn-chrl[data-id="' + userId + '"]').closest('tr');
-      userRow.after(row);
-
-      const select = row.querySelector('.chrl-select');
-      const msg = row.querySelector('.chrl-msg');
-      select.focus();
-
-      row.querySelector('.chrl-cancel').addEventListener('click', () => row.remove());
-
-      row.querySelector('.chrl-save').addEventListener('click', async () => {
-        msg.textContent = '';
-        msg.style.color = 'var(--red)';
+      async saveRole() {
+        this.roleMsg = '';
+        this.roleMsgIsError = true;
+        const userId = this.roleEditId;
+        if (!userId) return;
         try {
           const resp = await fetch('/api/auth/users/' + userId + '/role', {
             method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
-            body: JSON.stringify({ role: select.value }),
+            headers: qbr.csrfHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ role: this.roleInput }),
           });
-
           if (!resp.ok) {
-            const data = await resp.json();
-            msg.textContent = data.detail || 'Failed to change role.';
+            let detail = 'Failed to change role.';
+            try { const data = await resp.json(); if (data.detail) detail = data.detail; } catch (_) { /* ignore */ }
+            this.roleMsg = detail;
             return;
           }
-
-          msg.style.color = 'var(--green)';
-          msg.textContent = 'Role updated.';
-          setTimeout(() => { row.remove(); loadUsers(); }, 1000);
-        } catch {
-          msg.textContent = 'Network error.';
+          this.roleMsgIsError = false;
+          this.roleMsg = 'Role updated.';
+          setTimeout(() => {
+            this.roleEditId = null;
+            this.roleMsg = '';
+            this.loadUsers();
+          }, 1000);
+        } catch (_) {
+          this.roleMsg = 'Network error.';
         }
-      });
-    }
+      },
 
-    /* ── Create User ── */
-    const createBtn = $('btn-create');
-    if (createBtn) {
-      createBtn.addEventListener('click', async () => {
-        errorEl.textContent = '';
-        const username = $('new-username').value.trim();
-        const password = $('new-password').value;
-        const role = $('new-role').value;
+      cancelEdit() {
+        this.pwEditId = null;
+        this.roleEditId = null;
+        this.pwInput = '';
+        this.pwMsg = '';
+        this.roleMsg = '';
+      },
 
+      /* ── Create user ── */
+      async createUser() {
+        this.adminError = '';
+        const username = (this.newUsername || '').trim();
+        const password = this.newPassword || '';
+        const role = this.newRole || 'user';
         if (!username || !password) {
-          errorEl.textContent = 'Username and password are required.';
+          this.adminError = 'Username and password are required.';
           return;
         }
-
-        const check = validatePassword(password);
+        const check = qbr.validatePassword(password);
         if (!check.valid) {
-          errorEl.textContent = 'Password must contain: ' + check.errors.join(', ') + '.';
+          this.adminError = 'Password must contain: ' + check.errors.join(', ') + '.';
           return;
         }
-
         try {
           const resp = await fetch('/api/auth/users', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
+            headers: qbr.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ username, password, role }),
           });
-
           if (!resp.ok) {
-            const data = await resp.json();
-            errorEl.textContent = data.detail || 'Failed to create user.';
+            let detail = 'Failed to create user.';
+            try { const data = await resp.json(); if (data.detail) detail = data.detail; } catch (_) { /* ignore */ }
+            this.adminError = detail;
             return;
           }
-
-          $('new-username').value = '';
-          $('new-password').value = '';
-          $('new-role').value = 'user';
-          loadUsers();
-        } catch {
-          errorEl.textContent = 'Network error.';
+          this.newUsername = '';
+          this.newPassword = '';
+          this.newRole = 'user';
+          this.loadUsers();
+        } catch (_) {
+          this.adminError = 'Network error.';
         }
-      });
-    }
+      },
 
-    /* ── Dashboard Settings (refresh rate) ── */
-    async function loadRefreshRate() {
-      try {
-        const resp = await fetch('/api/auth/settings/refresh-rate');
-        if (resp.ok) {
-          const data = await resp.json();
-          const input = $('refresh-rate');
-          if (input) input.value = data.refresh_rate;
-        }
-      } catch { /* ignore */ }
-    }
+      /* ── Refresh rate ── */
+      async loadRefreshRate() {
+        try {
+          const resp = await fetch('/api/auth/settings/refresh-rate');
+          if (resp.ok) {
+            const data = await resp.json();
+            this.refreshRate = data.refresh_rate;
+          }
+        } catch (_) { /* ignore */ }
+      },
 
-    const btnSaveRefresh = $('btn-save-refresh');
-    if (btnSaveRefresh) {
-      btnSaveRefresh.addEventListener('click', async () => {
-        const input = $('refresh-rate');
-        const msg = $('refresh-rate-msg');
-        const val = parseInt(input ? input.value : '', 10);
+      async saveRefreshRate() {
+        this.refreshMsg = '';
+        this.refreshMsgIsError = true;
+        const val = parseInt(this.refreshRate, 10);
         if (!val || val < 2 || val > 300) {
-          if (msg) msg.textContent = 'Value must be between 2 and 300.';
+          this.refreshMsg = 'Value must be between 2 and 300.';
           return;
         }
         try {
           const resp = await fetch('/api/auth/settings/refresh-rate', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            headers: qbr.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ refresh_rate: val }),
           });
           if (resp.ok) {
-            if (msg) {
-              msg.textContent = 'Saved.';
-              setTimeout(() => { msg.textContent = ''; }, 2000);
-            }
+            this.refreshMsgIsError = false;
+            this.refreshMsg = 'Saved.';
+            setTimeout(() => { this.refreshMsg = ''; }, 2000);
           } else {
-            if (msg) msg.textContent = 'Failed to save.';
+            this.refreshMsg = 'Failed to save.';
           }
-        } catch {
-          if (msg) msg.textContent = 'Failed to save.';
+        } catch (_) {
+          this.refreshMsg = 'Failed to save.';
         }
-      });
-    }
+      },
 
-    loadRefreshRate();
+      /* ── qBit connection ── */
+      async loadConnectionInfo() {
+        try {
+          const resp = await fetch('/api/qbit/connection-info');
+          if (!resp.ok) return;
+          const info = await resp.json();
+          this.browserAuthEnabled = !!info.browser_auth_enabled;
+          this.browserHost = info.browser_host || '';
+          this.qbitUsername = info.qbit_username || '';
 
-    /* ── Logout ── */
-    const logoutBtn = $('btn-logout');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', async () => {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/login';
-      });
-    }
+          const banHint = info.browser_auth_enabled
+            ? 'Use Browser Auth or wait for ban to lift.'
+            : 'Log into qBittorrent directly to clear the ban, then use Retry Login.';
 
-    /* ── qBittorrent Connection ── */
-    const qbitDot = $('qbit-dot');
-    const qbitStatusText = $('qbit-status-text');
-    const qbitStatusMsg = $('qbit-status-msg');
-    const browserAuthMsg = $('browser-auth-msg');
-
-    async function loadConnectionInfo() {
-      try {
-        const resp = await fetch('/api/qbit/connection-info');
-        if (!resp.ok) return;
-        const info = await resp.json();
-
-        const browserAuthBlock = $('browser-auth-block');
-        if (browserAuthBlock) {
-          browserAuthBlock.style.display = info.browser_auth_enabled ? 'flex' : 'none';
-        }
-        const banHint = info.browser_auth_enabled
-          ? 'Use Browser Auth or wait for ban to lift.'
-          : 'Log into qBittorrent directly to clear the ban, then use Retry Login.';
-
-        if (qbitDot && qbitStatusText && qbitStatusMsg) {
           if (info.authenticated) {
-            qbitDot.className = 'dot dot-green';
-            qbitStatusText.textContent = 'Connected';
-            qbitStatusText.style.color = 'var(--green)';
-            qbitStatusMsg.textContent = '';
+            this.qbitDotClass = 'dot dot-green';
+            this.qbitStatusText = 'Connected';
+            this.qbitStatusColor = 'color:var(--green)';
+            this.qbitStatusMsg = '';
           } else if (info.ban_detected) {
-            qbitDot.className = 'dot dot-red';
-            qbitStatusText.textContent = 'IP Banned';
-            qbitStatusText.style.color = 'var(--red)';
-            qbitStatusMsg.textContent = 'Ban time remaining: ~' + info.ban_seconds_remaining + 's. ' + banHint;
+            this.qbitDotClass = 'dot dot-red';
+            this.qbitStatusText = 'IP Banned';
+            this.qbitStatusColor = 'color:var(--red)';
+            this.qbitStatusMsg = 'Ban time remaining: ~' + info.ban_seconds_remaining + 's. ' + banHint;
           } else if (info.cooldown_remaining > 0) {
-            qbitDot.className = 'dot dot-red';
-            qbitStatusText.textContent = 'Cooldown';
-            qbitStatusText.style.color = 'var(--yellow)';
-            qbitStatusMsg.textContent = 'Retry cooldown: ' + info.cooldown_remaining + 's remaining.';
+            this.qbitDotClass = 'dot dot-red';
+            this.qbitStatusText = 'Cooldown';
+            this.qbitStatusColor = 'color:var(--yellow)';
+            this.qbitStatusMsg = 'Retry cooldown: ' + info.cooldown_remaining + 's remaining.';
           } else {
-            qbitDot.className = 'dot dot-red';
-            qbitStatusText.textContent = 'Disconnected';
-            qbitStatusText.style.color = 'var(--red)';
-            qbitStatusMsg.textContent = 'Not authenticated with qBittorrent.';
+            this.qbitDotClass = 'dot dot-red';
+            this.qbitStatusText = 'Disconnected';
+            this.qbitStatusColor = 'color:var(--red)';
+            this.qbitStatusMsg = 'Not authenticated with qBittorrent.';
           }
-        }
 
-        if (info.browser_auth_enabled) {
-          if (info.browser_host && !$('qbit-url').value) {
-            $('qbit-url').value = info.browser_host;
+          if (info.browser_auth_enabled) {
+            if (this.browserHost && !this.qbitUrl) this.qbitUrl = this.browserHost;
+            if (this.qbitUsername && !this.qbitUser) this.qbitUser = this.qbitUsername;
           }
-          if (info.qbit_username && !$('qbit-user').value) {
-            $('qbit-user').value = info.qbit_username;
-          }
+        } catch (_) {
+          this.qbitDotClass = 'dot dot-red';
+          this.qbitStatusText = 'Error';
+          this.qbitStatusColor = 'color:var(--red)';
         }
-      } catch {
-        if (qbitDot) qbitDot.className = 'dot dot-red';
-        if (qbitStatusText) {
-          qbitStatusText.textContent = 'Error';
-          qbitStatusText.style.color = 'var(--red)';
-        }
-      }
-    }
+      },
 
-    const retryBtn = $('btn-retry-login');
-    if (retryBtn) {
-      retryBtn.addEventListener('click', async () => {
-        retryBtn.disabled = true;
-        retryBtn.textContent = 'Retrying...';
-        if (qbitStatusMsg) qbitStatusMsg.textContent = '';
+      async retryQbitLogin() {
+        this.retryDisabled = true;
+        this.retryLabel = 'Retrying...';
+        this.qbitStatusMsg = '';
         try {
           const resp = await fetch('/api/qbit/retry-login', {
             method: 'POST',
-            headers: { 'X-CSRF-Token': getCsrfToken() },
+            headers: qbr.csrfHeaders(),
           });
           const data = await resp.json();
-          if (qbitStatusMsg) {
-            qbitStatusMsg.textContent = data.message || '';
-            qbitStatusMsg.style.color = data.success ? 'var(--green)' : 'var(--red)';
-          }
-          await loadConnectionInfo();
-        } catch {
-          if (qbitStatusMsg) {
-            qbitStatusMsg.textContent = 'Network error.';
-            qbitStatusMsg.style.color = 'var(--red)';
-          }
+          this.qbitStatusMsg = data.message || '';
+          this.qbitStatusColor = 'color:' + (data.success ? 'var(--green)' : 'var(--red)');
+          await this.loadConnectionInfo();
+        } catch (_) {
+          this.qbitStatusMsg = 'Network error.';
+          this.qbitStatusColor = 'color:var(--red)';
         }
-        retryBtn.disabled = false;
-        retryBtn.textContent = 'Retry Login';
-      });
-    }
+        this.retryDisabled = false;
+        this.retryLabel = 'Retry Login';
+      },
 
-    const autofillBtn = $('btn-autofill');
-    if (autofillBtn) {
-      autofillBtn.addEventListener('click', async () => {
-        if (browserAuthMsg) browserAuthMsg.textContent = '';
+      async autofillCreds() {
+        this.browserAuthMsg = '';
         try {
           const resp = await fetch('/api/qbit/browser-auth-creds');
           if (!resp.ok) {
-            if (browserAuthMsg) {
-              browserAuthMsg.textContent = 'Failed to fetch credentials.';
-              browserAuthMsg.style.color = 'var(--red)';
-            }
+            this.browserAuthMsg = 'Failed to fetch credentials.';
+            this.browserAuthMsgColor = 'color:var(--red)';
             return;
           }
           const creds = await resp.json();
-          if (creds.url) $('qbit-url').value = creds.url;
-          if (creds.username) $('qbit-user').value = creds.username;
-          if (creds.password) $('qbit-pass').value = creds.password;
-          if (browserAuthMsg) {
-            browserAuthMsg.textContent = 'Credentials loaded from server.';
-            browserAuthMsg.style.color = 'var(--green)';
-          }
-        } catch {
-          if (browserAuthMsg) {
-            browserAuthMsg.textContent = 'Network error.';
-            browserAuthMsg.style.color = 'var(--red)';
-          }
+          if (creds.url) this.qbitUrl = creds.url;
+          if (creds.username) this.qbitUser = creds.username;
+          if (creds.password) this.qbitPass = creds.password;
+          this.browserAuthMsg = 'Credentials loaded from server.';
+          this.browserAuthMsgColor = 'color:var(--green)';
+        } catch (_) {
+          this.browserAuthMsg = 'Network error.';
+          this.browserAuthMsgColor = 'color:var(--red)';
         }
-      });
-    }
+      },
 
-    const browserAuthBtn = $('btn-browser-auth');
-    if (browserAuthBtn) {
-      browserAuthBtn.addEventListener('click', () => {
-        const url = $('qbit-url').value.trim();
-        const username = $('qbit-user').value.trim();
-        const password = $('qbit-pass').value;
-
-        const validUrl = validateHttpUrl(url);
+      submitBrowserAuth() {
+        const validUrl = qbr.validateHttpUrl((this.qbitUrl || '').trim());
         if (!validUrl) {
-          if (browserAuthMsg) {
-            browserAuthMsg.textContent = 'A valid http:// or https:// URL is required.';
-            browserAuthMsg.style.color = 'var(--red)';
-          }
+          this.browserAuthMsg = 'A valid http:// or https:// URL is required.';
+          this.browserAuthMsgColor = 'color:var(--red)';
           return;
         }
+        const username = (this.qbitUser || '').trim();
+        const password = this.qbitPass || '';
         if (!username || !password) {
-          if (browserAuthMsg) {
-            browserAuthMsg.textContent = 'Username and password are required.';
-            browserAuthMsg.style.color = 'var(--red)';
-          }
+          this.browserAuthMsg = 'Username and password are required.';
+          this.browserAuthMsgColor = 'color:var(--red)';
           return;
         }
 
-        // Create sandboxed hidden iframe (no allow-same-origin to protect our cookies)
+        // Sandboxed iframe (no allow-same-origin so it can't read our cookies)
         const iframe = document.createElement('iframe');
         iframe.name = 'qbit-auth-frame';
         iframe.sandbox = 'allow-forms';
         iframe.style.display = 'none';
         document.body.appendChild(iframe);
 
-        // Create hidden form targeting the iframe
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = validUrl.replace(/\/+$/, '') + '/api/v2/auth/login';
@@ -525,45 +472,29 @@
         document.body.appendChild(form);
         form.submit();
 
-        if (browserAuthMsg) {
-          browserAuthMsg.textContent = 'Auth request sent to qBittorrent. Click "Retry Login" to check if the backend can now connect.';
-          browserAuthMsg.style.color = 'var(--accent)';
-        }
+        this.browserAuthMsg = 'Auth request sent to qBittorrent. Click "Retry Login" to check if the backend can now connect.';
+        this.browserAuthMsgColor = 'color:var(--accent)';
 
-        // Clean up after 5 seconds
         setTimeout(() => {
           iframe.remove();
           form.remove();
         }, 5000);
-      });
-    }
+      },
 
-    const openWebuiBtn = $('btn-open-webui');
-    if (openWebuiBtn) {
-      openWebuiBtn.addEventListener('click', () => {
-        const url = $('qbit-url').value.trim();
-        const validUrl = validateHttpUrl(url);
+      openWebui() {
+        const validUrl = qbr.validateHttpUrl((this.qbitUrl || '').trim());
         if (!validUrl) {
-          if (browserAuthMsg) {
-            browserAuthMsg.textContent = 'Enter a valid http:// or https:// URL first.';
-            browserAuthMsg.style.color = 'var(--red)';
-          }
+          this.browserAuthMsg = 'Enter a valid http:// or https:// URL first.';
+          this.browserAuthMsgColor = 'color:var(--red)';
           return;
         }
         window.open(validUrl, '_blank');
-      });
-    }
+      },
 
-    /* ── Boot ── */
-    checkAdmin().then(() => {
-      loadUsers();
-      loadConnectionInfo();
-    });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+      async logout() {
+        try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) { /* ignore */ }
+        window.location.href = '/login';
+      },
+    }));
+  });
 })();

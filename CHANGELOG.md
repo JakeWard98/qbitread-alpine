@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Project rebrand to `qbitread-alpine`.** Repo renamed; published image
+  is now `ghcr.io/jakeward98/qbitread-alpine` (image name is auto-derived
+  from `${GITHUB_REPOSITORY,,}` so the workflow needed no logic change).
+  All hardcoded references in `docker-compose.yml`,
+  `docker-compose.hardcoded.yml`, `.github/RELEASE_TEMPLATE.md`, and
+  `README.md` updated. Same semver tag style preserved (`1.2.3`, `1.2`,
+  `1`, `latest`, `beta` for pre-releases).
+- **Frontend rewritten to Alpine.js (CSP build).** The four IIFE modules
+  (`app.js`, `auth.js`, `setup.js`, `admin.js`) became four `Alpine.data()`
+  components plus a shared helper module (`shared.js`). The vendored
+  `@alpinejs/csp` v3.14.9 build (~46 KB) is self-hosted at
+  `static/js/vendor/alpine-csp.min.js` — no external CDN, no `npm` build
+  step. Strict `script-src 'self'` CSP is preserved (the CSP build avoids
+  `new Function()`/`eval()`). UI, polling cadence, exponential backoff,
+  IP-ban detection, sandboxed-iframe browser-auth flow, CSRF
+  double-submit, and session-storage filter persistence all behave
+  identically to the previous build.
+- **Docker base swapped from `python:3.12-slim` to `python:3.12-alpine`.**
+  Stage 1 now uses `apk add --no-cache gcc musl-dev python3-dev libffi-dev
+  binutils`; stage 2 user creation uses Alpine's `addgroup -S` /
+  `adduser -S`. `bcrypt 5.0.0` ships musllinux wheels for cp312 on amd64
+  and aarch64, so multi-arch builds keep working without source
+  compilation. No backend logic changes; the API surface, auth flow,
+  middleware, circuit breaker, and database schema are untouched.
+
+### Added
+- **CodeQL workflow** (`.github/workflows/codeql.yml`). Scans Python and
+  JavaScript on every push to `main`, every PR, and weekly. Uses the
+  `security-extended,security-and-quality` query suites. Permissions
+  scoped to `contents: read`, `security-events: write`, `actions: read`.
+  Pinned to `github/codeql-action@68bde55…` (v4.35.4).
+
 ### Security
 - **2026-05-04 dependency re-audit.** Third consecutive clean run.
   Manual GHSA / NVD cross-check across every pinned dep in

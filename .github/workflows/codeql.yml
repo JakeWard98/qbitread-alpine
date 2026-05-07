@@ -1,0 +1,48 @@
+name: CodeQL
+
+# Static analysis powered by GitHub CodeQL. Scans Python (FastAPI app) and
+# JavaScript (Alpine.js components, vanilla JS in /static) for known
+# vulnerability patterns. Runs on every push to main, every PR targeting
+# main, and weekly to pick up newly published query updates.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 04:17 UTC — staggered minute to avoid GitHub Actions queue
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4.35.4
+        with:
+          languages: ${{ matrix.language }}
+          # Use the security-extended query suite to catch a wider range of
+          # vulnerabilities than the default. quality is included so we also
+          # flag maintainability issues that often correlate with security bugs.
+          queries: security-extended,security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4.35.4
+        with:
+          category: "/language:${{ matrix.language }}"
