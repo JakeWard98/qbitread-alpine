@@ -6,26 +6,26 @@
   <title>User Management - qBit Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="alternate icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="stylesheet" href="/static/css/style.css?v=2">
+  <link rel="stylesheet" href="/static/css/style.css?v=3">
 </head>
-<body>
+<body x-data="adminApp">
   <header>
     <a href="/" class="header-home-link"><h1>q<span>Bit</span> Dashboard</h1></a>
     <div class="header-right">
       <a href="/" class="btn-ghost">Dashboard</a>
-      <button class="btn-ghost" id="btn-logout">Logout</button>
+      <button class="btn-ghost" @click="logout">Logout</button>
     </div>
   </header>
   <div class="admin-wrap">
     <h2>qBittorrent Connection</h2>
     <div class="admin-form" style="flex-direction:column;gap:14px">
       <div style="display:flex;align-items:center;gap:10px">
-        <span class="dot" id="qbit-dot"></span>
-        <span id="qbit-status-text" style="font-size:13px">Checking...</span>
-        <button class="btn-primary" id="btn-retry-login" style="margin-left:auto">Retry Login</button>
+        <span :class="qbitDotClass"></span>
+        <span :style="qbitStatusColor" x-text="qbitStatusText" style="font-size:13px">Checking...</span>
+        <button class="btn-primary" @click="retryQbitLogin" :disabled="retryDisabled" x-text="retryLabel" style="margin-left:auto">Retry Login</button>
       </div>
-      <div id="qbit-status-msg" style="font-size:12px;color:var(--muted)"></div>
-      <div id="browser-auth-block" style="display:none;flex-direction:column;gap:14px">
+      <div :style="qbitStatusColor" x-text="qbitStatusMsg" style="font-size:12px;color:var(--muted)"></div>
+      <div :style="browserAuthBlockStyle">
         <hr style="border:none;border-top:1px solid var(--border)">
         <div style="font-size:12px;color:var(--muted);margin-bottom:2px">
           Browser Auth — send credentials directly from your browser to qBittorrent to help resolve IP bans.
@@ -33,23 +33,23 @@
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
           <div class="form-group" style="margin-bottom:0">
             <label for="qbit-url">qBit URL</label>
-            <input id="qbit-url" type="text" placeholder="http://localhost:8080" autocomplete="off" style="width:220px">
+            <input id="qbit-url" type="text" placeholder="http://localhost:8080" autocomplete="off" style="width:220px" x-model="qbitUrl">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label for="qbit-user">Username</label>
-            <input id="qbit-user" type="text" placeholder="admin" autocomplete="off" style="width:120px">
+            <input id="qbit-user" type="text" placeholder="admin" autocomplete="off" style="width:120px" x-model="qbitUser">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label for="qbit-pass">Password</label>
-            <input id="qbit-pass" type="password" placeholder="password" autocomplete="off" style="width:140px">
+            <input id="qbit-pass" type="password" placeholder="password" autocomplete="off" style="width:140px" x-model="qbitPass">
           </div>
-          <button class="btn-ghost" id="btn-autofill" title="Auto-fill credentials from server config">Auto-fill</button>
+          <button class="btn-ghost" @click="autofillCreds" title="Auto-fill credentials from server config">Auto-fill</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn-primary" id="btn-browser-auth">Send Browser Auth</button>
-          <button class="btn-ghost" id="btn-open-webui">Open qBit Web UI</button>
+          <button class="btn-primary" @click="submitBrowserAuth">Send Browser Auth</button>
+          <button class="btn-ghost" @click="openWebui">Open qBit Web UI</button>
         </div>
-        <div id="browser-auth-msg" style="font-size:12px;min-height:18px"></div>
+        <div :style="browserAuthMsgColor" x-text="browserAuthMsg" style="font-size:12px;min-height:18px"></div>
       </div>
     </div>
 
@@ -57,28 +57,28 @@
     <div class="admin-form" style="align-items:flex-end">
       <div class="form-group">
         <label for="refresh-rate">Refresh Rate (seconds)</label>
-        <input id="refresh-rate" type="number" min="2" max="300" style="width:100px">
+        <input id="refresh-rate" type="number" min="2" max="300" style="width:100px" x-model="refreshRate">
       </div>
       <div class="form-group">
         <label>&nbsp;</label>
-        <button class="btn-primary" id="btn-save-refresh">Save</button>
+        <button class="btn-primary" @click="saveRefreshRate">Save</button>
       </div>
-      <div id="refresh-rate-msg" style="font-size:12px;min-height:18px;align-self:flex-end;padding-bottom:8px"></div>
+      <div :style="refreshMsgStyle" x-text="refreshMsg" style="font-size:12px;min-height:18px;align-self:flex-end;padding-bottom:8px"></div>
     </div>
 
     <h2 style="margin-top:24px">User Management</h2>
     <div class="admin-form">
       <div class="form-group">
         <label for="new-username">Username</label>
-        <input id="new-username" type="text" placeholder="username" autocomplete="off">
+        <input id="new-username" type="text" placeholder="username" autocomplete="off" x-model="newUsername">
       </div>
       <div class="form-group pw-field-wrap">
         <label for="new-password">Password <span class="pw-tooltip-trigger" tabindex="0">?<span class="pw-tooltip">Password must contain:<br>- At least 8 characters<br>- 1 uppercase letter (A-Z)<br>- 1 lowercase letter (a-z)<br>- 1 number (0-9)<br>- 1 special character</span></span></label>
-        <input id="new-password" type="password" placeholder="min 8 chars" autocomplete="new-password">
+        <input id="new-password" type="password" placeholder="min 8 chars" autocomplete="new-password" x-model="newPassword">
       </div>
       <div class="form-group">
         <label for="new-role">Role</label>
-        <select id="new-role" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:13px;outline:none;width:160px">
+        <select id="new-role" x-model="newRole" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:13px;outline:none;width:160px">
           <option value="user">User</option>
           <option value="monitor">Monitor</option>
           <option value="admin">Admin</option>
@@ -86,10 +86,10 @@
       </div>
       <div class="form-group">
         <label>&nbsp;</label>
-        <button class="btn-primary" id="btn-create">Create User</button>
+        <button class="btn-primary" @click="createUser">Create User</button>
       </div>
     </div>
-    <div id="admin-error" class="login-error" style="text-align:left;margin-bottom:12px"></div>
+    <div class="login-error" x-show="adminError" x-text="adminError" style="text-align:left;margin-bottom:12px"></div>
     <table class="admin-table">
       <thead>
         <tr>
@@ -100,9 +100,53 @@
           <th></th>
         </tr>
       </thead>
-      <tbody id="users-tbody"></tbody>
+      <tbody>
+        <template x-for="row in userRows" :key="row.key">
+          <tr>
+            <td class="td-user" x-show="row.isUserRow" x-text="row.user.username"></td>
+            <td class="td-role" x-show="row.isUserRow">
+              <span :class="row.user.roleBadgeClass" x-text="row.user.roleLabel"></span>
+              <button class="btn-ghost" :data-id="row.user.id" :data-role="row.user.role" @click="startEditRole">Change Role</button>
+            </td>
+            <td class="td-created" x-show="row.isUserRow" x-text="row.user.createdText" style="color:var(--muted)"></td>
+            <td class="td-pw" x-show="row.isUserRow">
+              <span :class="row.user.pwBadgeClass" :title="row.user.pwBadgeTitle" x-text="row.user.pwBadgeText"></span>
+              <button class="btn-ghost" :data-id="row.user.id" :data-name="row.user.username" @click="startEditPassword">Change</button>
+            </td>
+            <td class="td-actions" x-show="row.isUserRow">
+              <button class="btn-danger" :data-id="row.user.id" @click="deleteUser">Delete</button>
+            </td>
+
+            <td colspan="5" x-show="row.isPwEdit" class="chpw-inline" style="padding:10px 8px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:12px;color:var(--muted)">New password for <strong style="color:var(--text)" x-text="row.user.username"></strong>:</span>
+                <input type="password" placeholder="min 8 chars" x-model="pwInput" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 8px;font-size:12px;width:180px;outline:none">
+                <button class="btn-primary" @click="savePassword" style="font-size:11px;padding:6px 12px">Save</button>
+                <button class="btn-ghost" @click="cancelEdit" style="font-size:11px;padding:6px 10px">Cancel</button>
+                <span :style="pwMsgStyle" x-text="pwMsg" style="font-size:12px;min-height:16px"></span>
+              </div>
+            </td>
+
+            <td colspan="5" x-show="row.isRoleEdit" class="chrl-inline" style="padding:10px 8px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+                <span style="font-size:12px;color:var(--muted);white-space:nowrap">New role:</span>
+                <select x-model="roleInput" style="background:#1e1e1e;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 8px;font-size:12px;outline:none;min-width:100px">
+                  <option value="user">User</option>
+                  <option value="monitor">Monitor</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button class="btn-primary" @click="saveRole" style="font-size:11px;padding:6px 12px">Save</button>
+                <button class="btn-ghost" @click="cancelEdit" style="font-size:11px;padding:6px 10px">Cancel</button>
+                <span :style="roleMsgStyle" x-text="roleMsg" style="font-size:12px;min-height:16px"></span>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
     </table>
   </div>
-  <script data-cfasync="false" src="/static/js/admin.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/shared.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/admin.js?v=3"></script>
+  <script defer data-cfasync="false" src="/static/js/vendor/alpine-csp.min.js?v=3"></script>
 </body>
 </html>

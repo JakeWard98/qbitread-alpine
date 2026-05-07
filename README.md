@@ -1,16 +1,16 @@
 <div align="center">
   
-[![CodeQL](https://img.shields.io/github/actions/workflow/status/JakeWard98/qbitread/github-code-scanning/codeql?label=CodeQL&logo=github&logoColor=white)](https://github.com/JakeWard98/qbitread/actions/workflows/github-code-scanning/codeql) ![GitHub Release](https://img.shields.io/github/v/release/JakeWard98/qBitRead?color=purple&label=Release&logo=github&logoColor=white) ![GitHub License](https://img.shields.io/github/license/JakeWard98/qBitRead?label=License) ![Image Size](https://img.shields.io/badge/Image%20Size-139.6MB-blue?logo=docker&logoColor=white) ![Tech Stack](https://img.shields.io/badge/Tech%20Stack-Python%20%7C%20HTML%20%7C%20CSS%20%7C%20JavaScript-blue?color=orange&logo=python&logoColor=white)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/JakeWard98/qbitread-alpine/codeql.yml?label=CodeQL&logo=github&logoColor=white)](https://github.com/JakeWard98/qbitread-alpine/actions/workflows/codeql.yml) ![GitHub Release](https://img.shields.io/github/v/release/JakeWard98/qbitread-alpine?color=purple&label=Release&logo=github&logoColor=white) ![GitHub License](https://img.shields.io/github/license/JakeWard98/qbitread-alpine?label=License) ![Base Image](https://img.shields.io/badge/Base-Alpine%20Linux-blue?logo=alpinelinux&logoColor=white) ![Tech Stack](https://img.shields.io/badge/Tech%20Stack-Python%20%7C%20FastAPI%20%7C%20Alpine.js-blue?color=orange&logo=python&logoColor=white)
 
 </div>
 
 <div align="center">
 
-# qBitRead <img src="static/favicon.svg" alt="qBitRead Logo" width="30">
+# qBitRead-Alpine <img src="static/favicon.svg" alt="qBitRead Logo" width="30">
 
 </div>
 
-A lightweight, read-only Docker web app for monitoring your qBittorrent instance. Dark, minimal dashboard with live speeds, progress, ETA, and multi-user authentication.
+A lightweight, read-only Docker web app for monitoring your qBittorrent instance. Built on **Alpine Linux** with an **Alpine.js** frontend (CSP-friendly build, self-hosted) — small image, strict CSP, no external CDN. Dark, minimal dashboard with live speeds, progress, ETA, and multi-user authentication.
 
 > **Disclaimer:** This is a personal project built for my own homelab, completely written with Claude AI. It is available for anyone to use, but **use at your own risk**. No warranties or guarantees are provided.
 
@@ -77,8 +77,8 @@ The backend is the only component that communicates with qBittorrent. The browse
 
 ```bash
 # Clone and configure
-git clone https://github.com/JakeWard98/qbitread.git
-cd qbitread
+git clone https://github.com/JakeWard98/qbitread-alpine.git
+cd qbitread-alpine
 cp .env.example .env
 # Edit .env with your qBittorrent details
 
@@ -92,10 +92,10 @@ If you set `ADMIN_PASSWORD` in `.env`, the admin account is created automaticall
 
 ## Docker Image
 
-Published to GitHub Container Registry with `linux/amd64` and `linux/arm64` support.
+Published to GitHub Container Registry with `linux/amd64` and `linux/arm64` support. Image is based on `python:3.12-alpine` (musl libc, BusyBox userland) for a smaller attack surface.
 
 ```bash
-docker pull ghcr.io/jakeward98/qbitread:latest
+docker pull ghcr.io/jakeward98/qbitread-alpine:latest
 ```
 
 The `/app/data` volume holds two files: `qbitread.db` (SQLite database with all users) and `.secret_key` (auto-generated JWT signing key). Back up this volume before upgrading or migrating.
@@ -186,14 +186,17 @@ If your reverse proxy runs on a different IP from the container, set `TRUSTED_PR
 
 ## Security
 
+- **Strict CSP** — `script-src 'self'` (no `'unsafe-eval'`, no `'unsafe-inline'`) is preserved by using the [Alpine.js CSP build](https://alpinejs.dev/advanced/csp). The standard Alpine bundle would require `'unsafe-eval'` and is intentionally not used.
 - **JWT cookies** — HTTP-only, SameSite=Strict, Secure flag when behind HTTPS
 - **CSRF protection** — double-submit cookie pattern on all mutating requests
 - **Rate limiting** — 5 login attempts per minute per IP
 - **Password policy** — enforced on all new accounts; weak existing passwords are flagged
 - **Security headers** — CSP, X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy
 - **Credential isolation** — by default, qBittorrent credentials exist only on the server and are never sent to the browser. The opt-in `ENABLE_BROWSER_AUTH` feature is the one documented exception
+- **Alpine Linux base image** — musl libc, BusyBox userland, smaller attack surface than Debian-slim
 - **Non-root container** — runs as `appuser` with no login shell
 - **Auto-generated secrets** — `SECRET_KEY` created and persisted on first run if not provided
+- **Static analysis** — CodeQL runs on every push, every PR, and weekly (security-extended + security-and-quality query suites for both Python and JavaScript)
 
 ## Troubleshooting
 
@@ -209,8 +212,8 @@ Check browser console for errors. Ensure your reverse proxy is forwarding header
 **CSP console warning: "blocked an inline script (script-src-elem)" behind Cloudflare**
 qBitRead's `Content-Security-Policy` is intentionally strict (`script-src 'self'`) and blocks any inline `<script>` injected into the page by an upstream proxy. The warning is cosmetic — the dashboard does not need the injected script and continues to work. To silence it, disable Cloudflare's **Email Address Obfuscation** (Scrape Shield → Email Address Obfuscation) and **Rocket Loader** (Speed → Optimization → Content Optimization) for the qBitRead hostname.
 
-**"Cannot reach qBittorrent: Cannot set properties of null" after upgrading**
-This means your browser or CDN is still serving a cached, pre-upgrade `app.js`. qBitRead now ships `Cache-Control: no-cache, must-revalidate` on JS/CSS so future upgrades invalidate automatically, but a one-time cache purge may be needed after upgrading from an older version: hard-reload (`Ctrl+Shift+R`) and, if you sit behind Cloudflare, purge `/static/js/app.js` from the Cloudflare cache once.
+**Dashboard not updating, "Cannot set properties of null", or stale JS after upgrading**
+This means your browser or CDN is still serving cached pre-upgrade JS. The frontend was rewritten to Alpine.js — the old `app.js`, `auth.js` files no longer exist; the new component files are `dashboard.js`, `login.js`, `setup.js`, `admin.js`, plus `shared.js` and `vendor/alpine-csp.min.js`. qBitRead ships `Cache-Control: no-cache, must-revalidate` on JS/CSS so future upgrades invalidate automatically, but a one-time cache purge may be needed when upgrading from an older version: hard-reload (`Ctrl+Shift+R`) and, if you sit behind Cloudflare, purge `/static/js/*` from the Cloudflare cache once.
 
 ## Development
 
@@ -226,9 +229,9 @@ uvicorn app.main:app --reload --port 8000
 ## Tech Stack
 
 - **Backend** — Python 3.12, FastAPI, Uvicorn
-- **Frontend** — Vanilla JavaScript, HTML5, CSS3 (no frameworks, no build step)
+- **Frontend** — Alpine.js (CSP-friendly build, self-hosted at `static/js/vendor/alpine-csp.min.js`), HTML5, CSS3 — no build step, no external CDN
 - **Database** — SQLite via aiosqlite (raw async queries, no ORM)
 - **HTTP Client** — httpx (async)
 - **Auth** — PyJWT + bcrypt
-- **Container** — Docker multi-stage build
-- **CI/CD** — GitHub Actions to GitHub Container Registry
+- **Container** — Alpine Linux (`python:3.12-alpine`), multi-stage build, non-root user
+- **CI/CD** — GitHub Actions → GitHub Container Registry, CodeQL static analysis (Python + JavaScript)

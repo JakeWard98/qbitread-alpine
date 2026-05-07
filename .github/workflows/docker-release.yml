@@ -21,8 +21,9 @@ jobs:
     steps:
       # ── 1. Lowercase image name ────────────────────────────────────────────
       # github.repository preserves the owner's original casing (e.g.
-      # "JakeWard98/qbitread"). Docker registry refs must be fully lowercase,
-      # so we convert once here and use IMAGE_NAME for all subsequent steps.
+      # "JakeWard98/qbitread-alpine"). Docker registry refs must be fully
+      # lowercase, so we convert once here and use IMAGE_NAME for all
+      # subsequent steps.
       - name: Set lowercase image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
@@ -51,13 +52,13 @@ jobs:
 
       # ── 5. Extract Docker metadata ─────────────────────────────────────────
       # Given a stable release tag of v1.2.3, this generates:
-      #   ghcr.io/jakeward98/qbitread:1.2.3
-      #   ghcr.io/jakeward98/qbitread:1.2
-      #   ghcr.io/jakeward98/qbitread:1
-      #   ghcr.io/jakeward98/qbitread:latest
+      #   ghcr.io/jakeward98/qbitread-alpine:1.2.3
+      #   ghcr.io/jakeward98/qbitread-alpine:1.2
+      #   ghcr.io/jakeward98/qbitread-alpine:1
+      #   ghcr.io/jakeward98/qbitread-alpine:latest
       # Given a pre-release tag of v1.2.3-beta.1, this generates:
-      #   ghcr.io/jakeward98/qbitread:1.2.3-beta.1
-      #   ghcr.io/jakeward98/qbitread:beta
+      #   ghcr.io/jakeward98/qbitread-alpine:1.2.3-beta.1
+      #   ghcr.io/jakeward98/qbitread-alpine:beta
       #   (latest is NOT updated for pre-releases)
       # OCI-standard labels (org.opencontainers.image.*) are also attached.
       - name: Extract Docker metadata

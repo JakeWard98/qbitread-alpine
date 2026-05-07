@@ -1,6 +1,6 @@
 services:
   qbitread:
-    image: ghcr.io/jakeward98/qbitread:latest
+    image: ghcr.io/jakeward98/qbitread-alpine:latest
     container_name: qbitread
     restart: unless-stopped
     ports:

@@ -1,12 +1,11 @@
-/* qBitRead initial-setup component (Alpine.js CSP build). */
+/* qBitRead login component (Alpine.js CSP build). */
 (function () {
   'use strict';
 
   document.addEventListener('alpine:init', () => {
-    Alpine.data('setupApp', () => ({
-      username: 'admin',
+    Alpine.data('loginApp', () => ({
+      username: '',
       password: '',
-      confirmPassword: '',
       errorText: '',
       submitting: false,
 
@@ -16,42 +15,34 @@
         this.errorText = '';
         const u = (this.username || '').trim();
         const p = this.password || '';
-        const c = this.confirmPassword || '';
-
         if (!u || !p) {
           this.errorText = 'Please enter username and password.';
           return;
         }
-        const check = qbr.validatePassword(p);
-        if (!check.valid) {
-          this.errorText = 'Password must contain: ' + check.errors.join(', ') + '.';
-          return;
-        }
-        if (p !== c) {
-          this.errorText = 'Passwords do not match.';
-          return;
-        }
-
         this.submitting = true;
         try {
-          const resp = await fetch('/api/auth/setup', {
+          const resp = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: u, password: p }),
           });
 
-          if (resp.status === 403) {
-            window.location.href = '/login';
+          if (resp.status === 429) {
+            this.errorText = 'Too many attempts. Please wait and try again.';
             return;
           }
 
           const data = await resp.json();
+
           if (!resp.ok) {
-            this.errorText = data.detail || 'Setup failed.';
+            this.errorText = data.detail || 'Login failed.';
             return;
           }
 
-          window.location.href = '/login';
+          if (data.password_weak) {
+            try { sessionStorage.setItem('password_weak', '1'); } catch (_) { /* ignore */ }
+          }
+          window.location.href = '/';
         } catch (_) {
           this.errorText = 'Network error. Please try again.';
         } finally {

@@ -1,16 +1,17 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.12-alpine AS builder
 
-# Build tools needed by bcrypt (C extension) and any future packages
-# that require compilation. binutils provides `strip` used to shrink the
-# venv's native shared-objects. All of this is discarded with the builder
-# stage and never ships in the runtime image.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Build tools needed by bcrypt (C extension) and any future packages that
+# require compilation. binutils provides `strip` used to shrink the venv's
+# native shared-objects. All of this is discarded with the builder stage
+# and never ships in the runtime image. bcrypt 5.x ships musllinux wheels
+# for cp312 on amd64/arm64, so this is a fallback for arches without a wheel.
+RUN apk add --no-cache \
     gcc \
+    musl-dev \
     python3-dev \
     libffi-dev \
-    binutils \
-    && rm -rf /var/lib/apt/lists/*
+    binutils
 
 WORKDIR /app
 RUN python -m venv /venv
@@ -30,13 +31,14 @@ RUN pip install --no-cache-dir --no-compile -r requirements.txt \
     && pip uninstall -y pip setuptools 2>/dev/null; true
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+# Non-root user with no login shell. Alpine uses BusyBox addgroup/adduser.
+RUN addgroup -S appuser && adduser -S -G appuser -h /app -s /sbin/nologin appuser
 
 WORKDIR /app
 
-# Copy only the compiled virtualenv — no gcc or headers in the final image
+# Copy only the compiled virtualenv — no compilers or headers in the final image
 COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
